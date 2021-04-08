@@ -1,11 +1,13 @@
 import gym
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 from torch import nn
 from torch.distributions.categorical import Categorical
 
 gamma = 0.99
 alpha = 1e-2
+num_of_episodes = 300
 
 
 class Policy(nn.Module):
@@ -58,7 +60,9 @@ def main():
     policy = Policy(obs_dim, n_actions)
     optimizer = torch.optim.Adam(policy.parameters(), lr=alpha)
 
-    for epsi in range(300):
+    history = {'return_per_episode': []}
+
+    for epsi in range(num_of_episodes):
         observation = env.reset()
         for t in range(200):
             env.render()
@@ -69,8 +73,14 @@ def main():
                 break
 
         train(policy, optimizer)
-        print(f"Episode: {epsi}, return: {np.sum(policy.rewards)}")
+        total_return = np.sum(policy.rewards)
+        history['return_per_episode'].append(total_return)
+        print(f"Episode: {epsi}, return: {total_return}")
+
         policy.reset()
+
+    plt.plot(range(num_of_episodes), history['return_per_episode'])
+    plt.savefig('return_per_episode.png')
 
 
 if __name__ == '__main__':
