@@ -152,7 +152,6 @@ def main():
     for i in range(10):
         trial_return = run_trial()
         all_returns.append(trial_return)
-        print(trial_return.shape)
         print(f'Trial {i+1}, average trial return: {np.mean(trial_return)}')
 
     mean_returns = np.mean(all_returns, axis=0)
