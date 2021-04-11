@@ -27,13 +27,14 @@ class Policy(nn.Module):
         self.rewards = []
         self.log_probs = []
 
-    def act(self, obs):
+    def act(self, obs, eval=False):
         x = torch.tensor(obs, dtype=torch.float32)
         pdparams = self.forward(x)
         pd = Categorical(logits=pdparams)
         action = pd.sample()
-        self.log_probs.append(pd.log_prob(action))
-        return action.item()
+        if not eval:
+            self.log_probs.append(pd.log_prob(action))
+        return action
 
 
 def train(policy, optimizer):
@@ -53,34 +54,67 @@ def train(policy, optimizer):
     optimizer.step()
 
 
-def main():
+def evaluate(agent):
+    env = gym.make('CartPole-v0')
+    state = env.reset()
+    done = False
+    episode_return = 0
+    while not done:
+        action = agent.act(state, eval=True).item()
+        state, reward, done, _ = env.step(action)
+        episode_return += reward
+    return episode_return
+
+
+def run_trial():
     env = gym.make('CartPole-v0')
     obs_dim = env.observation_space.shape[0]
     n_actions = env.action_space.n
     policy = Policy(obs_dim, n_actions)
     optimizer = torch.optim.Adam(policy.parameters(), lr=alpha)
 
-    history = {'return_per_episode': []}
+    return_hist = []
+    timestep = 1
 
-    for epsi in range(num_of_episodes):
+    while timestep < 1e5:
         observation = env.reset()
-        for t in range(200):
-            env.render()
-            action = policy.act(observation)
+        done = False
+        while not done:
+            action = policy.act(observation).item()
             observation, reward, done, _ = env.step(action)
             policy.rewards.append(reward)
-            if done:
-                break
+
+            if timestep % 1000 == 0:
+                eval_return = evaluate(policy)
+                return_hist.append(eval_return)
+
+            timestep += 1
 
         train(policy, optimizer)
-        total_return = np.sum(policy.rewards)
-        history['return_per_episode'].append(total_return)
-        print(f"Episode: {epsi}, return: {total_return}")
-
         policy.reset()
 
-    plt.plot(range(num_of_episodes), history['return_per_episode'])
-    plt.savefig('return_per_episode.png')
+    return np.array(return_hist)
+
+
+def main():
+    all_returns = []
+
+    for i in range(10):
+        trial_return = run_trial()
+        all_returns.append(trial_return)
+        print(f'Trial {i+1}, average trial return: {np.mean(trial_return)}')
+
+    mean_returns = np.mean(all_returns, axis=0)
+    std_returns = np.std(all_returns, axis=0)
+
+    x = range(mean_returns.shape[0])
+    plt.plot(x, mean_returns)
+    plt.title('Mean return over 10 trials')
+    plt.fill_between(x, mean_returns - std_returns, mean_returns + std_returns, alpha=0.2)
+    plt.ylabel('Mean return')
+    plt.xlabel('1000 frames')
+    plt.savefig('avg_return.png')
+    plt.show()
 
 
 if __name__ == '__main__':
