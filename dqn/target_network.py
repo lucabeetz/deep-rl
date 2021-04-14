@@ -1,3 +1,4 @@
+
 import math
 import random
 import gym
@@ -41,9 +42,9 @@ class ReplayMemory():
             batch[k] = torch.from_numpy(batch[k].astype(np.float32))
         return batch
 
-class policy_net(nn.Module):
+class DQN_net(nn.Module):
     def __init__(self, input_dim, output_dim):
-        super(policy_net, self).__init__()
+        super(DQN_net, self).__init__()
         self.model = nn.Sequential(
             nn.Linear(input_dim, 64),
             nn.SELU(),
@@ -54,8 +55,10 @@ class policy_net(nn.Module):
         return self.model(x)
 
 class DQN():
-    def __init__(self, policy_net, n_actions, gamma, tau_start, tau_end, tau_decay):
+    def __init__(self, policy_net, target_net, n_actions, gamma, tau_start, tau_end, tau_decay):
         self.policy_net = policy_net
+        self.target_net = target_net
+
         self.n_actions = n_actions
 
         self.gamma = gamma
@@ -85,8 +88,7 @@ class DQN():
         next_states = batch['next_states']
 
         q_preds = self.policy_net(states)
-        with torch.no_grad():
-            next_q_preds = self.policy_net(next_states)
+        next_q_preds = self.target_net(next_states)
 
         act_q_preds = q_preds.gather(-1, batch['actions'].long().unsqueeze(-1)).squeeze(-1)
         act_next_max_q, _ = next_q_preds.max(dim=-1, keepdim=False)
@@ -128,8 +130,10 @@ def run_trial():
     obs_dim = env.observation_space.shape[0]
     n_actions = env.action_space.n
 
-    policy_net = policy_net(obs_dim, n_actions)
-    agent = DQN(policy_net, n_actions, 0.99, 5.0, 0.1, 10000)
+    policy_net = DQN_net(obs_dim, n_actions)
+    target_net = DQN_net(obs_dim, n_actions)
+
+    agent = DQN(policy_net, target_net, n_actions, 0.99, 5.0, 0.1, 10000)
     optim = torch.optim.Adam(policy_net.parameters())
     memory = ReplayMemory(10000)
 
@@ -159,6 +163,10 @@ def run_trial():
                 eval_return = evaluate(agent)
                 return_hist.append(eval_return)
 
+            # Update target network every 1000 timesteps
+            if timestep % 1000 == 0:
+                target_net.load_state_dict(policy_net.state_dict())
+
             timestep += 1
 
     return np.array(return_hist)
@@ -166,7 +174,7 @@ def run_trial():
 
 def main():
     """
-    Runs multiple trials of the implemented DQN agent
+    Runs multiple trials of the implemented DQN agent with target network
     """
     all_returns = []
 
@@ -180,11 +188,11 @@ def main():
 
     x = range(mean_returns.shape[0])
     plt.plot(x, mean_returns)
-    plt.title('Mean return over 10 trials - Vanilla DQN')
+    plt.title('Mean return over 10 trials - DQN with target network')
     plt.fill_between(x, mean_returns - std_returns, mean_returns + std_returns, alpha=0.2)
     plt.ylabel('Mean return')
     plt.xlabel('1000 frames')
-    plt.savefig('avg_return_vanilla.png')
+    plt.savefig('avg_return_target_network.png')
     plt.show()
 
 
