@@ -7,19 +7,21 @@ from torch import nn
 import matplotlib.pyplot as plt
 from torch.distributions.categorical import Categorical
 
+
 class ReplayMemory():
+    """ReplayMemory for storing a fixed set of experiences"""
+
     def __init__(self, capacity):
         self.capacity = capacity
         self.data_keys = ['states', 'actions', 'rewards', 'next_states', 'dones']
-        self.reset()
 
-    def reset(self):
         self.size = 0
         self.head = 0
         for k in self.data_keys:
             setattr(self, k, [])
 
     def add_experience(self, state, action, reward, next_state, done):
+        """Add a new experience to memory and advance head pointer"""
         experience = (state, action, reward, next_state, done)
         for i, k in enumerate(self.data_keys):
             if self.size < self.capacity:
@@ -30,20 +32,25 @@ class ReplayMemory():
         self.size = min(self.size+1, self.capacity)
 
     def sample(self, batch_size):
+        """Get random sample of [batch_size] elements from memory"""
         batch_idxs = np.random.randint(0, self.size, batch_size)
         batch = {k: [] for k in self.data_keys}
         for idx in batch_idxs:
             for k in self.data_keys:
                 batch[k].append(getattr(self, k)[idx])
 
+        # Convert lists to tensors
         for k in batch:
             batch[k] = np.array(batch[k])
             batch[k] = torch.from_numpy(batch[k].astype(np.float32))
         return batch
 
-class policy_net(nn.Module):
+
+class QNet(nn.Module):
+    """NN for approximating the Q-function"""
+
     def __init__(self, input_dim, output_dim):
-        super(policy_net, self).__init__()
+        super(QNet, self).__init__()
         self.model = nn.Sequential(
             nn.Linear(input_dim, 64),
             nn.SELU(),
@@ -53,9 +60,12 @@ class policy_net(nn.Module):
     def forward(self, x):
         return self.model(x)
 
+
 class DQN():
-    def __init__(self, policy_net, n_actions, gamma, tau_start, tau_end, tau_decay):
-        self.policy_net = policy_net
+    """Implementation of the DQN algorithm"""
+
+    def __init__(self, qnet, n_actions, gamma, tau_start, tau_end, tau_decay):
+        self.qnet = qnet
         self.n_actions = n_actions
 
         self.gamma = gamma
@@ -63,15 +73,18 @@ class DQN():
         self.tau_end = tau_end
         self.tau_decay = tau_decay
 
-    def act(self, state, timestep=1e4):
+    def act(self, state, eval=False):
         """
         Pick an action using a Boltzmann policy
         """
-        tau = max(self.tau_end, self.tau_start -
-                            timestep * (self.tau_start - self.tau_end) / self.tau_decay)
+        if not eval:
+            tau = max(self.tau_end, self.tau_start -
+                      timestep * (self.tau_start - self.tau_end) / self.tau_decay)
+        else:
+            tau = self.tau_end
 
         state = torch.tensor(state, dtype=torch.float32)
-        action_values = self.policy_net(state)
+        action_values = self.qnet(state)
         z = action_values - max(action_values)
         action_probs = torch.exp(z / tau) / torch.sum(torch.exp(z / tau))
         return Categorical(probs=action_probs).sample()
@@ -84,9 +97,9 @@ class DQN():
         states = batch['states']
         next_states = batch['next_states']
 
-        q_preds = self.policy_net(states)
+        q_preds = self.qnet(states)
         with torch.no_grad():
-            next_q_preds = self.policy_net(next_states)
+            next_q_preds = self.qnet(next_states)
 
         act_q_preds = q_preds.gather(-1, batch['actions'].long().unsqueeze(-1)).squeeze(-1)
         act_next_max_q, _ = next_q_preds.max(dim=-1, keepdim=False)
@@ -105,6 +118,7 @@ class DQN():
         optim.step()
         return loss
 
+
 def evaluate(agent):
     """
     Evaluate the current agent on a single episode
@@ -114,7 +128,7 @@ def evaluate(agent):
     done = False
     episode_return = 0
     while not done:
-        action = agent.act(state).item()
+        action = agent.act(state, eval=True).item()
         state, reward, done, _ = env.step(action)
         episode_return += reward
     return episode_return
@@ -128,10 +142,10 @@ def run_trial():
     obs_dim = env.observation_space.shape[0]
     n_actions = env.action_space.n
 
-    policy_net = policy_net(obs_dim, n_actions)
-    agent = DQN(policy_net, n_actions, 0.99, 5.0, 0.1, 10000)
-    optim = torch.optim.Adam(policy_net.parameters())
-    memory = ReplayMemory(10000)
+    qnet = QNet(obs_dim, n_actions)
+    agent = DQN(qnet, n_actions, 0.99, 5.0, 0.1, 10000)
+    optim = torch.optim.Adam(qnet.parameters())
+    memory = ReplayMemory(1000)
 
     return_hist = []
     timestep = 1
@@ -148,7 +162,7 @@ def run_trial():
             memory.add_experience(state, action, reward, next_state, done)
             state = next_state
 
-            # Run multiple training steps
+            # Run multiple training steps every 4 timesteps starting at timestep 32
             if timestep > 32 and timestep % 4 == 0:
                 batch = memory.sample(32)
                 for _ in range(4):
@@ -166,7 +180,7 @@ def run_trial():
 
 def main():
     """
-    Runs multiple trials of the implemented DQN agent
+    Run 10 trials of the DQN agent on the CartPole-v1 env and plot results
     """
     all_returns = []
 

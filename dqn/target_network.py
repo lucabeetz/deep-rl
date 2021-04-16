@@ -8,6 +8,7 @@ from torch import nn
 import matplotlib.pyplot as plt
 from torch.distributions.categorical import Categorical
 
+
 class ReplayMemory():
     def __init__(self, capacity):
         self.capacity = capacity
@@ -42,6 +43,7 @@ class ReplayMemory():
             batch[k] = torch.from_numpy(batch[k].astype(np.float32))
         return batch
 
+
 class DQN_net(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(DQN_net, self).__init__()
@@ -53,6 +55,7 @@ class DQN_net(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
 
 class DQN():
     def __init__(self, policy_net, target_net, n_actions, gamma, tau_start, tau_end, tau_decay):
@@ -71,7 +74,7 @@ class DQN():
         Pick an action using a Boltzmann policy
         """
         tau = max(self.tau_end, self.tau_start -
-                            timestep * (self.tau_start - self.tau_end) / self.tau_decay)
+                  timestep * (self.tau_start - self.tau_end) / self.tau_decay)
 
         state = torch.tensor(state, dtype=torch.float32)
         action_values = self.policy_net(state)
@@ -106,6 +109,7 @@ class DQN():
         loss.backward()
         optim.step()
         return loss
+
 
 def evaluate(agent):
     """
@@ -174,7 +178,7 @@ def run_trial():
 
 def main():
     """
-    Runs multiple trials of the implemented DQN agent with target network
+    Run 10 trials of the DQN agent with target network on the CartPole-v1 env and plot results
     """
     all_returns = []
 
