@@ -167,8 +167,8 @@ def run_trial():
                 eval_return = evaluate(agent)
                 return_hist.append(eval_return)
 
-            # Update target network every 1000 timesteps
-            if timestep % 1000 == 0:
+            # Update target network every 500 timesteps
+            if timestep % 500 == 0:
                 target_net.load_state_dict(policy_net.state_dict())
 
             timestep += 1
